@@ -6,15 +6,46 @@ import { HeaderNav } from '@/components/HeaderNav';
 import { BotanicalCorner, BotanicalDivider } from '@/components/BotanicalArtwork';
 import { 
   Plus, Trash2, Edit3, Copy, Check, Eye, Sparkles, Image as ImageIcon, 
-  Heart, Calendar, User, RefreshCw, Music
+  Calendar, User, RefreshCw, Music, Lock, LogOut, ShieldCheck, Database,
+  AlertTriangle, KeyRound
 } from 'lucide-react';
 import { UserWishData } from '@/lib/seedData';
 
+// Helper for safe JSON fetching (prevents JSON.parse HTML response crash)
+async function safeFetchJson(url: string, options?: RequestInit) {
+  const res = await fetch(url, options);
+  const contentType = res.headers.get('content-type') || '';
+
+  if (!contentType.includes('application/json')) {
+    const text = await res.text();
+    if (res.status === 413) {
+      throw new Error('Payload too large! Base64 MP3 file exceeds maximum upload size (~4MB limit). Please use a direct MP3 URL or select a smaller audio file under 3MB.');
+    }
+    throw new Error(`Server returned HTTP ${res.status}: ${text.slice(0, 150)}`);
+  }
+
+  const json = await res.json();
+  if (!res.ok) {
+    throw new Error(json.error || `Request failed with HTTP status ${res.status}`);
+  }
+  return json;
+}
+
 export default function HaroAdminPage() {
+  // Auth State
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [checkingAuth, setCheckingAuth] = useState<boolean>(true);
+  const [loginUsername, setLoginUsername] = useState<string>('haroharsh');
+  const [loginPassword, setLoginPassword] = useState<string>('harshit@admin12');
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginSubmitting, setLoginSubmitting] = useState<boolean>(false);
+
+  // DB Data State
   const [wishes, setWishes] = useState<UserWishData[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
+  const [clearingDb, setClearingDb] = useState(false);
 
   // Form State
   const [editingHash, setEditingHash] = useState<string | null>(null);
@@ -40,16 +71,24 @@ export default function HaroAdminPage() {
   ]);
   const [newPicUrl, setNewPicUrl] = useState('');
 
-  // Fetch all relatives
+  // Check saved authentication token on mount
+  useEffect(() => {
+    const token = localStorage.getItem('haroadmin_token');
+    if (token) {
+      setIsAuthenticated(true);
+    }
+    setCheckingAuth(false);
+  }, []);
+
+  // Fetch all wishes when authenticated
   const fetchWishes = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/wishes');
-      const json = await res.json();
+      const json = await safeFetchJson('/api/wishes');
       if (json.success && Array.isArray(json.data)) {
         setWishes(json.data);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error loading relative wishes:', err);
     } finally {
       setLoading(false);
@@ -57,8 +96,43 @@ export default function HaroAdminPage() {
   };
 
   useEffect(() => {
-    fetchWishes();
-  }, []);
+    if (isAuthenticated) {
+      fetchWishes();
+    }
+  }, [isAuthenticated]);
+
+  // Handle Login submission
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError(null);
+    setLoginSubmitting(true);
+
+    try {
+      const json = await safeFetchJson('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: loginUsername, password: loginPassword }),
+      });
+
+      if (json.success) {
+        localStorage.setItem('haroadmin_token', json.token);
+        localStorage.setItem('haroadmin_user', json.username);
+        setIsAuthenticated(true);
+      } else {
+        setLoginError(json.error || 'Authentication failed');
+      }
+    } catch (err: any) {
+      setLoginError(err.message || 'Login failed');
+    } finally {
+      setLoginSubmitting(false);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('haroadmin_token');
+    localStorage.removeItem('haroadmin_user');
+    setIsAuthenticated(false);
+  };
 
   const generateHash = () => {
     const cleanName = (name || 'relative').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 6);
@@ -125,13 +199,12 @@ export default function HaroAdminPage() {
       const url = editingHash ? `/api/wishes/${editingHash}` : '/api/wishes';
       const method = editingHash ? 'PUT' : 'POST';
 
-      const res = await fetch(url, {
+      const json = await safeFetchJson(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      const json = await res.json();
       if (json.success) {
         alert(editingHash ? 'Profile updated!' : 'New Birthday Wish Portal created!');
         resetForm();
@@ -150,8 +223,7 @@ export default function HaroAdminPage() {
     if (!confirm(`Delete ${recipientName}'s birthday portal?`)) return;
 
     try {
-      const res = await fetch(`/api/wishes/${hashToDelete}`, { method: 'DELETE' });
-      const json = await res.json();
+      const json = await safeFetchJson(`/api/wishes/${hashToDelete}`, { method: 'DELETE' });
       if (json.success) {
         fetchWishes();
       } else {
@@ -159,6 +231,47 @@ export default function HaroAdminPage() {
       }
     } catch (err: any) {
       alert('Failed: ' + err.message);
+    }
+  };
+
+  // Clear entire Database function
+  const handleClearAllDB = async () => {
+    if (!confirm('⚠️ ARE YOU ABSOLUTELY SURE?\n\nThis will DELETE ALL birthday portals from the MongoDB database and local store AT ONCE! This action cannot be undone.')) {
+      return;
+    }
+
+    setClearingDb(true);
+    try {
+      const json = await safeFetchJson('/api/wishes', { method: 'DELETE' });
+      if (json.success) {
+        alert('🗑️ Database cleared successfully! 0 wishes remaining.');
+        setWishes([]);
+        resetForm();
+      } else {
+        alert('Error clearing database: ' + json.error);
+      }
+    } catch (err: any) {
+      alert('Failed to clear database: ' + err.message);
+    } finally {
+      setClearingDb(false);
+    }
+  };
+
+  // Reset database to initial seed data
+  const handleResetSeedData = async () => {
+    if (!confirm('Reset database to initial sample birthday portals?')) return;
+
+    setLoading(true);
+    try {
+      const json = await safeFetchJson('/api/wishes', { method: 'PUT' });
+      if (json.success && Array.isArray(json.data)) {
+        setWishes(json.data);
+        alert('🌱 Database reset to initial sample portals!');
+      }
+    } catch (err: any) {
+      alert('Failed to reset database: ' + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -194,12 +307,163 @@ export default function HaroAdminPage() {
   };
   const handleRemovePicture = (idx: number) => setPicturesList(picturesList.filter((_, i) => i !== idx));
 
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen bg-[#fef1ec] flex items-center justify-center">
+        <div className="text-center font-serif italic text-lg text-[#11223f]/70">
+          Loading authentication...
+        </div>
+      </div>
+    );
+  }
+
+  // 🔒 LOGIN SCREEN (UNAUTHENTICATED)
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#fef1ec] text-[#11223f] flex flex-col">
+        <HeaderNav />
+        <main className="flex-1 flex items-center justify-center px-4 py-12">
+          <div className="w-full max-w-md bg-white p-8 sm:p-10 border border-[#f6bba4] shadow-xl relative">
+            <BotanicalCorner position="top-left" />
+            <BotanicalCorner position="top-right" />
+
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[#ff5734]/10 text-[#ff5734] mb-3">
+                <Lock className="w-7 h-7" />
+              </div>
+              <p className="eyebrow-label mb-1">PROTECTED DEVELOPER STUDIO</p>
+              <h1 className="font-serif text-3xl font-normal uppercase text-[#11223f]">
+                HaroAdmin Login
+              </h1>
+              <p className="font-serif italic text-sm text-[#11223f]/70 mt-1">
+                Enter your HaroAdmin credentials to access portal management.
+              </p>
+              <BotanicalDivider className="my-3" />
+            </div>
+
+            {loginError && (
+              <div className="mb-6 p-3 bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{loginError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleLoginSubmit} className="space-y-5">
+              <div>
+                <label className="block text-xs font-sans tracking-[0.2em] uppercase font-semibold text-[#11223f] mb-2">
+                  Admin ID / Username
+                </label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-[#ff5734] absolute left-3 top-3.5" />
+                  <input
+                    type="text"
+                    required
+                    value={loginUsername}
+                    onChange={(e) => setLoginUsername(e.target.value)}
+                    placeholder="e.g. haroharsh"
+                    className="w-full bg-[#fef1ec] border border-[#11223f]/30 pl-10 pr-4 py-2.5 font-sans text-sm focus:outline-none focus:border-[#ff5734]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-sans tracking-[0.2em] uppercase font-semibold text-[#11223f] mb-2">
+                  Admin Password
+                </label>
+                <div className="relative">
+                  <KeyRound className="w-4 h-4 text-[#ff5734] absolute left-3 top-3.5" />
+                  <input
+                    type="password"
+                    required
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder="Enter password..."
+                    className="w-full bg-[#fef1ec] border border-[#11223f]/30 pl-10 pr-4 py-2.5 font-sans text-sm focus:outline-none focus:border-[#ff5734]"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 space-y-3">
+                <button
+                  type="submit"
+                  disabled={loginSubmitting}
+                  className="w-full btn-pill-filled text-xs py-3 justify-center"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>{loginSubmitting ? 'Authenticating...' : 'Log In to HaroAdmin'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginUsername('haroharsh');
+                    setLoginPassword('harshit@admin12');
+                  }}
+                  className="w-full text-center text-xs font-sans text-[#ff5734] hover:underline"
+                >
+                  Prefill ID (haroharsh) & Password (harshit@admin12)
+                </button>
+              </div>
+            </form>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // 🔓 AUTHENTICATED HAROADMIN STUDIO
   return (
     <div className="min-h-screen bg-[#fef1ec] text-[#11223f] flex flex-col">
       <HeaderNav />
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-12 flex-1 w-full">
         
+        {/* Top Control Bar */}
+        <div className="bg-white p-4 sm:p-6 border border-[#f6bba4] mb-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
+            <div>
+              <p className="font-sans text-xs font-semibold tracking-widest text-[#11223f] uppercase flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-[#ff5734]" />
+                <span>Logged in as: <strong className="text-[#ff5734]">haroharsh</strong></span>
+              </p>
+              <p className="text-[11px] font-sans text-[#11223f]/60">MongoDB & Local JSON Sync Active</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Clear All DB Button */}
+            <button
+              onClick={handleClearAllDB}
+              disabled={clearingDb}
+              className="bg-red-600 hover:bg-red-700 text-white text-xs font-sans font-semibold uppercase tracking-wider px-4 py-2.5 rounded-full flex items-center gap-1.5 transition-colors shadow-sm"
+              title="Clear all wish portals from MongoDB and local storage at once"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>{clearingDb ? 'Clearing DB...' : 'Clear All DB Data'}</span>
+            </button>
+
+            {/* Seed Sample Portals */}
+            <button
+              onClick={handleResetSeedData}
+              className="btn-pill-outlined text-xs py-2 px-4 !normal-case"
+              title="Reset database to 4 initial sample portals"
+            >
+              <Database className="w-3.5 h-3.5 text-[#ff5734]" />
+              <span>Seed Sample Data</span>
+            </button>
+
+            {/* Logout */}
+            <button
+              onClick={handleLogout}
+              className="p-2.5 bg-[#fef1ec] hover:bg-[#f6bba4]/30 border border-[#11223f]/30 text-[#11223f] text-xs flex items-center gap-1 font-semibold uppercase tracking-wider rounded-full transition-colors"
+            >
+              <LogOut className="w-4 h-4 text-[#ff5734]" />
+              <span className="hidden sm:inline">Logout</span>
+            </button>
+          </div>
+        </div>
+
         <div className="text-center mb-12 relative">
           <p className="eyebrow-label mb-2">DEVELOPER SECRET ACCESS</p>
           <h1 className="font-serif font-normal text-4xl sm:text-6xl text-[#11223f] uppercase">
@@ -312,8 +576,9 @@ export default function HaroAdminPage() {
                             ? `${(file.size / (1024 * 1024)).toFixed(2)} MB`
                             : `${(file.size / 1024).toFixed(1)} KB`;
 
-                          if (file.size > 20 * 1024 * 1024) {
-                            alert(`Selected file is ${sizeFormatted}. Please select an MP3 file under 20MB.`);
+                          // Base64 limit check to prevent Serverless payload 413 error
+                          if (file.size > 3.5 * 1024 * 1024) {
+                            alert(`⚠️ MP3 file is ${sizeFormatted}.\n\nFiles over 3.5MB exceed the serverless request body limit (~4.5MB base64). Please paste a direct MP3 URL or Google Drive link instead, or select an MP3 under 3.5MB.`);
                             return;
                           }
 
@@ -331,7 +596,7 @@ export default function HaroAdminPage() {
                     />
                   </label>
                   <p className="text-[11px] font-sans text-[#11223f]/60 mt-2 text-center">
-                    Encodes & saves MP3 file to MongoDB & local disk.
+                    Encodes & saves MP3 file to MongoDB & local disk (Max ~3.5MB).
                   </p>
                 </div>
 
@@ -498,13 +763,26 @@ export default function HaroAdminPage() {
 
         {/* Database Relatives List */}
         <div className="bg-white p-6 sm:p-10 border border-[#f6bba4]">
-          <div className="flex items-center justify-between border-b border-[#f6bba4]/40 pb-4 mb-8">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-[#f6bba4]/40 pb-4 mb-8 gap-4">
             <h2 className="font-serif text-2xl uppercase tracking-wider text-[#11223f]">
               Portals in Database ({wishes.length})
             </h2>
-            <button onClick={fetchWishes} className="text-xs font-sans text-[#ff5734] font-medium tracking-widest uppercase flex items-center gap-1 hover:underline">
-              <RefreshCw className="w-3.5 h-3.5" /> Refresh
-            </button>
+
+            <div className="flex items-center gap-3">
+              {wishes.length > 0 && (
+                <button
+                  onClick={handleClearAllDB}
+                  disabled={clearingDb}
+                  className="text-xs font-sans text-red-600 font-medium tracking-widest uppercase flex items-center gap-1 hover:underline"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Clear All DB Data
+                </button>
+              )}
+
+              <button onClick={fetchWishes} className="text-xs font-sans text-[#ff5734] font-medium tracking-widest uppercase flex items-center gap-1 hover:underline">
+                <RefreshCw className="w-3.5 h-3.5" /> Refresh
+              </button>
+            </div>
           </div>
 
           {loading ? (
@@ -512,8 +790,11 @@ export default function HaroAdminPage() {
               Loading portals...
             </div>
           ) : wishes.length === 0 ? (
-            <div className="py-12 text-center text-[#11223f]/60 font-serif italic text-lg">
-              No wish portals found in database. Create one above!
+            <div className="py-12 text-center text-[#11223f]/60 font-serif italic text-lg space-y-3">
+              <p>No wish portals found in database. The database is empty.</p>
+              <button onClick={handleResetSeedData} className="btn-pill-outlined text-xs py-2 px-4 mx-auto">
+                🌱 Seed Sample Data
+              </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

@@ -1,5 +1,5 @@
 import { connectToDatabase } from './mongodb';
-import UserWish, { IUserWish } from '../models/UserWish';
+import UserWish from '../models/UserWish';
 import { INITIAL_SEED_WISHES, UserWishData } from './seedData';
 import fs from 'fs';
 import path from 'path';
@@ -12,7 +12,7 @@ function loadLocalFileWishes(): UserWishData[] {
     if (fs.existsSync(LOCAL_DATA_FILE)) {
       const content = fs.readFileSync(LOCAL_DATA_FILE, 'utf-8');
       const parsed = JSON.parse(content);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         return parsed;
       }
     }
@@ -39,21 +39,23 @@ function saveLocalFileWishes(wishes: UserWishData[]) {
 let memoryStore: UserWishData[] = loadLocalFileWishes();
 
 export async function getAllWishes(): Promise<UserWishData[]> {
+  const fileExists = fs.existsSync(LOCAL_DATA_FILE);
+
   try {
     const mongooseConn = await connectToDatabase();
     if (mongooseConn && mongooseConn.connection?.readyState === 1) {
       let wishes = await UserWish.find({}).sort({ createdAt: -1 }).lean();
       
-      if (!wishes || wishes.length === 0) {
+      // Only seed initial wishes if neither MongoDB nor local file has ever been initialized
+      if ((!wishes || wishes.length === 0) && !fileExists) {
         console.log('🌱 Seeding initial relative wishes into MongoDB...');
-        // Strip string _id so Mongoose auto-generates valid ObjectIds
         const cleanSeeds = memoryStore.map(({ _id, ...rest }) => rest);
         await UserWish.insertMany(cleanSeeds);
+        saveLocalFileWishes(INITIAL_SEED_WISHES);
         wishes = await UserWish.find({}).sort({ createdAt: -1 }).lean();
       }
       
       const dbWishes = JSON.parse(JSON.stringify(wishes));
-      // Merge file/memory store items that might not be in DB yet
       const combined = [...dbWishes];
       for (const memItem of memoryStore) {
         if (!combined.some(w => w.hash.toLowerCase() === memItem.hash.toLowerCase())) {
@@ -77,12 +79,6 @@ export async function getWishByHash(hash: string): Promise<UserWishData | null> 
   try {
     const mongooseConn = await connectToDatabase();
     if (mongooseConn && mongooseConn.connection?.readyState === 1) {
-      const count = await UserWish.countDocuments();
-      if (count === 0) {
-        await UserWish.insertMany(INITIAL_SEED_WISHES);
-      }
-
-      // Case-insensitive lookup in MongoDB
       const wish = await UserWish.findOne({ 
         $or: [
           { hash: { $regex: new RegExp(`^${cleanHash}$`, 'i') } },
@@ -101,8 +97,6 @@ export async function getWishByHash(hash: string): Promise<UserWishData | null> 
   // Fallback to local JSON file & memory store
   const localList = loadLocalFileWishes();
   const foundInLocal = localList.find(
-    (w) => w.hash.toLowerCase() === cleanHash || w.name.toLowerCase() === cleanHash
-  ) || INITIAL_SEED_WISHES.find(
     (w) => w.hash.toLowerCase() === cleanHash || w.name.toLowerCase() === cleanHash
   );
 
@@ -130,7 +124,6 @@ export async function createWish(data: Partial<UserWishData>): Promise<UserWishD
 
   // 1. Save to local JSON file store permanently
   const currentList = loadLocalFileWishes();
-  // Filter out any existing item with same hash
   const updatedList = [newWishData, ...currentList.filter(w => w.hash.toLowerCase() !== generatedHash)];
   saveLocalFileWishes(updatedList);
   memoryStore = updatedList;
@@ -203,6 +196,49 @@ export async function deleteWish(hash: string): Promise<boolean> {
   }
 
   return true;
+}
+
+/**
+ * Clear all wishes from both MongoDB and local file store all at once.
+ */
+export async function clearAllWishes(): Promise<boolean> {
+  // 1. Clear local file store
+  saveLocalFileWishes([]);
+  memoryStore = [];
+
+  // 2. Clear MongoDB collection
+  try {
+    const mongooseConn = await connectToDatabase();
+    if (mongooseConn && mongooseConn.connection?.readyState === 1) {
+      await UserWish.deleteMany({});
+      console.log('🗑️ All wishes deleted from MongoDB.');
+    }
+  } catch (error) {
+    console.error('⚠️ MongoDB clear all failed:', error);
+  }
+
+  return true;
+}
+
+/**
+ * Reset to default initial seed wishes.
+ */
+export async function resetToSeedWishes(): Promise<UserWishData[]> {
+  saveLocalFileWishes(INITIAL_SEED_WISHES);
+  memoryStore = [...INITIAL_SEED_WISHES];
+
+  try {
+    const mongooseConn = await connectToDatabase();
+    if (mongooseConn && mongooseConn.connection?.readyState === 1) {
+      await UserWish.deleteMany({});
+      const cleanSeeds = INITIAL_SEED_WISHES.map(({ _id, ...rest }) => rest);
+      await UserWish.insertMany(cleanSeeds);
+    }
+  } catch (error) {
+    console.error('⚠️ MongoDB seed reset failed:', error);
+  }
+
+  return memoryStore;
 }
 
 function generateRandomHash(name: string): string {
