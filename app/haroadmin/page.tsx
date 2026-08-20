@@ -19,7 +19,7 @@ async function safeFetchJson(url: string, options?: RequestInit) {
   if (!contentType.includes('application/json')) {
     const text = await res.text();
     if (res.status === 413) {
-      throw new Error('Payload too large! Base64 MP3 file exceeds maximum upload size (~4MB limit). Please use a direct MP3 URL or select a smaller audio file under 3MB.');
+      throw new Error('Payload too large! Base64 MP3 file exceeds request limit. Please select an audio file under 10MB or use a direct URL.');
     }
     throw new Error(`Server returned HTTP ${res.status}: ${text.slice(0, 150)}`);
   }
@@ -576,9 +576,9 @@ export default function HaroAdminPage() {
                             ? `${(file.size / (1024 * 1024)).toFixed(2)} MB`
                             : `${(file.size / 1024).toFixed(1)} KB`;
 
-                          // Base64 limit check to prevent Serverless payload 413 error
-                          if (file.size > 3.5 * 1024 * 1024) {
-                            alert(`⚠️ MP3 file is ${sizeFormatted}.\n\nFiles over 3.5MB exceed the serverless request body limit (~4.5MB base64). Please paste a direct MP3 URL or Google Drive link instead, or select an MP3 under 3.5MB.`);
+                          // Allow MP3 files up to 10MB (comfortably supporting 5MB+ audio files)
+                          if (file.size > 10 * 1024 * 1024) {
+                            alert(`⚠️ MP3 file is ${sizeFormatted}.\n\nPlease select an MP3 file under 10MB, or paste a direct MP3 URL / Google Drive link instead.`);
                             return;
                           }
 
@@ -596,7 +596,7 @@ export default function HaroAdminPage() {
                     />
                   </label>
                   <p className="text-[11px] font-sans text-[#11223f]/60 mt-2 text-center">
-                    Encodes & saves MP3 file to MongoDB & local disk (Max ~3.5MB).
+                    Encodes & saves MP3 file to MongoDB & local disk (Supports 5MB+ audio, max 10MB).
                   </p>
                 </div>
 
