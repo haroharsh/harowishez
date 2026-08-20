@@ -39,6 +39,8 @@ export function SpotifyPlayer({ songUrl, recipientName }: SpotifyPlayerProps) {
     if (!audio) return;
 
     let blobUrl = '';
+    let cleanUpInteractionListeners: (() => void) | null = null;
+
     setAudioError(null);
     setIsPlaying(false);
 
@@ -58,6 +60,58 @@ export function SpotifyPlayer({ songUrl, recipientName }: SpotifyPlayerProps) {
     audio.src = audioSrc;
     audio.load();
 
+    let hasAttemptedPlay = false;
+
+    const attemptAutoplay = () => {
+      if (!audio || hasAttemptedPlay) return;
+      hasAttemptedPlay = true;
+
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            setIsPlaying(true);
+            setAudioError(null);
+          })
+          .catch((err) => {
+            console.warn('Autoplay restricted by browser policy. Waiting for user interaction:', err);
+            
+            const handleFirstInteraction = () => {
+              if (audioRef.current) {
+                audioRef.current
+                  .play()
+                  .then(() => {
+                    setIsPlaying(true);
+                    setAudioError(null);
+                  })
+                  .catch((e) => {
+                    console.warn('Playback on user interaction failed:', e);
+                  });
+              }
+              if (cleanUpInteractionListeners) {
+                cleanUpInteractionListeners();
+              }
+            };
+
+            const removeListeners = () => {
+              window.removeEventListener('click', handleFirstInteraction);
+              window.removeEventListener('touchstart', handleFirstInteraction);
+              window.removeEventListener('pointerdown', handleFirstInteraction);
+              window.removeEventListener('scroll', handleFirstInteraction);
+              window.removeEventListener('keydown', handleFirstInteraction);
+            };
+
+            cleanUpInteractionListeners = removeListeners;
+
+            window.addEventListener('click', handleFirstInteraction, { once: true, capture: true });
+            window.addEventListener('touchstart', handleFirstInteraction, { once: true, capture: true });
+            window.addEventListener('pointerdown', handleFirstInteraction, { once: true, capture: true });
+            window.addEventListener('scroll', handleFirstInteraction, { once: true, capture: true });
+            window.addEventListener('keydown', handleFirstInteraction, { once: true, capture: true });
+          });
+      }
+    };
+
     const updateTime = () => setCurrentTime(audio.currentTime);
     const updateDuration = () => setDuration(audio.duration || 0);
     const handleEnded = () => setIsPlaying(false);
@@ -68,14 +122,23 @@ export function SpotifyPlayer({ songUrl, recipientName }: SpotifyPlayerProps) {
 
     audio.addEventListener('timeupdate', updateTime);
     audio.addEventListener('loadedmetadata', updateDuration);
+    audio.addEventListener('canplay', attemptAutoplay);
     audio.addEventListener('ended', handleEnded);
     audio.addEventListener('error', handleError);
+
+    // Attempt autoplay immediately
+    attemptAutoplay();
 
     return () => {
       audio.removeEventListener('timeupdate', updateTime);
       audio.removeEventListener('loadedmetadata', updateDuration);
+      audio.removeEventListener('canplay', attemptAutoplay);
       audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('error', handleError);
+
+      if (cleanUpInteractionListeners) {
+        cleanUpInteractionListeners();
+      }
 
       if (blobUrl) {
         URL.revokeObjectURL(blobUrl);
@@ -171,7 +234,7 @@ export function SpotifyPlayer({ songUrl, recipientName }: SpotifyPlayerProps) {
   return (
     <div className="w-full max-w-2xl mx-auto my-12 bg-[#121212] text-white p-5 sm:p-6 rounded-2xl shadow-2xl border border-white/10 relative overflow-hidden group">
       
-      <audio ref={audioRef} preload="auto" />
+      <audio ref={audioRef} preload="auto" autoPlay />
 
       {/* Spotify Green Glow */}
       <div className="absolute top-0 right-0 w-64 h-64 bg-[#1DB954]/10 rounded-full blur-3xl pointer-events-none" />
