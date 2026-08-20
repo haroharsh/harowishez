@@ -2,47 +2,42 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
-    const file = formData.get('file') as File | null;
+    const fileNameHeader = req.headers.get('x-filename');
+    const rawFileName = fileNameHeader ? decodeURIComponent(fileNameHeader) : `audio-${Date.now()}.mp3`;
 
-    if (!file) {
+    // Read binary body stream directly
+    const arrayBuffer = await req.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    if (!buffer || buffer.length === 0) {
       return NextResponse.json(
-        { success: false, error: 'No audio file selected' },
+        { success: false, error: 'No audio data received' },
         { status: 400 }
       );
     }
-
-    // Limit size to 50MB for audio files
-    if (file.size > 50 * 1024 * 1024) {
-      return NextResponse.json(
-        { success: false, error: 'Audio file exceeds 50MB limit' },
-        { status: 400 }
-      );
-    }
-
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
 
     let publicUrl = '';
 
-    // Attempt to write to public/uploads directory
+    // Save file to public/uploads directory
     try {
       const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
       if (!fs.existsSync(uploadsDir)) {
         fs.mkdirSync(uploadsDir, { recursive: true });
       }
 
-      const cleanFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const cleanFileName = rawFileName.replace(/[^a-zA-Z0-9.-]/g, '_');
       const fileName = `${Date.now()}-${cleanFileName}`;
       const filePath = path.join(uploadsDir, fileName);
 
       fs.writeFileSync(filePath, buffer);
       publicUrl = `/uploads/${fileName}`;
     } catch (writeErr) {
-      console.warn('⚠️ Could not write to public/uploads directory (read-only filesystem), converting to Data URL:', writeErr);
-      const mimeType = file.type || 'audio/mp3';
+      console.warn('⚠️ Disk write fallback to Data URL:', writeErr);
+      const mimeType = req.headers.get('content-type') || 'audio/mp3';
       const base64 = buffer.toString('base64');
       publicUrl = `data:${mimeType};base64,${base64}`;
     }
@@ -50,8 +45,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       url: publicUrl,
-      fileName: file.name,
-      size: file.size,
+      fileName: rawFileName,
+      size: buffer.length,
     });
   } catch (error: any) {
     console.error('Error in /api/upload:', error);

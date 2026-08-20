@@ -579,14 +579,25 @@ export default function HaroAdminPage() {
                             : `${(file.size / 1024).toFixed(1)} KB`;
 
                           setUploadingAudio(true);
-                          const formData = new FormData();
-                          formData.append('file', file);
 
                           try {
                             const res = await fetch('/api/upload', {
                               method: 'POST',
-                              body: formData,
+                              headers: {
+                                'x-filename': encodeURIComponent(file.name),
+                                'content-type': file.type || 'audio/mp3',
+                              },
+                              body: file,
                             });
+
+                            const contentType = res.headers.get('content-type') || '';
+                            if (!contentType.includes('application/json')) {
+                              const text = await res.text();
+                              throw new Error(res.status === 413 
+                                ? 'Server payload limit exceeded. Please select an audio file under 10MB or paste an MP3 URL.'
+                                : `Server returned HTTP ${res.status}: ${text.slice(0, 120)}`);
+                            }
+
                             const json = await res.json();
                             if (json.success && json.url) {
                               setSongUrl(json.url);
