@@ -1,26 +1,234 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Daniela and Moe 2019 — Color Palette Tokens */
+  --color-blush-canvas: #fef1ec;
+  --color-ink-navy: #11223f;
+  --color-coral-vermillion: #ff5734;
+  --color-dusty-peach: #f6bba4;
+  --color-forest-ink: #193c35;
+  --color-olive-grove: #7e813c;
+  --color-mustard-bloom: #e5ba2b;
+  --color-ember-orange: #ec4f22;
+  --color-sage-mist: #c6d7d0;
+  --color-deep-indigo: #092a49;
+  --color-pure-white: #ffffff;
+
+  /* Fonts */
+  --font-serif: var(--font-serif-display), "Cormorant Garamond", Georgia, serif;
+  --font-sans: var(--font-sans-ui), "Montserrat", sans-serif;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@theme {
+  --color-blush-canvas: var(--color-blush-canvas);
+  --color-ink-navy: var(--color-ink-navy);
+  --color-coral-vermillion: var(--color-coral-vermillion);
+  --color-dusty-peach: var(--color-dusty-peach);
+  --color-forest-ink: var(--color-forest-ink);
+  --color-olive-grove: var(--color-olive-grove);
+  --color-mustard-bloom: var(--color-mustard-bloom);
+  --color-ember-orange: var(--color-ember-orange);
+  --color-sage-mist: var(--color-sage-mist);
+  --color-deep-indigo: var(--color-deep-indigo);
+  --color-pure-white: var(--color-pure-white);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-serif-display: var(--font-serif);
+  --font-sans-ui: var(--font-sans);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-blush-canvas);
+  color: var(--color-ink-navy);
+  font-family: var(--font-sans);
+  overflow-x: hidden;
 }
+
+/* Typography styles based on spec */
+.font-serif-display {
+  font-family: var(--font-serif);
+}
+
+.font-sans-ui {
+  font-family: var(--font-sans);
+}
+
+/* Eyebrow small-caps style */
+.eyebrow-label {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 14px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-ink-navy);
+}
+
+/* Large Editorial Display Name */
+.display-hero-name {
+  font-family: var(--font-serif);
+  font-weight: 300;
+  font-size: clamp(3.5rem, 9vw, 7.5rem);
+  line-height: 0.88;
+  color: var(--color-ink-navy);
+  letter-spacing: -0.02em;
+}
+
+/* Button & Pill System: 200px border radius is mandatory */
+.btn-pill-outlined {
+  border: 2px solid var(--color-coral-vermillion);
+  background-color: transparent;
+  color: var(--color-ink-navy);
+  border-radius: 200px;
+  padding: 10px 28px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.btn-pill-outlined:hover {
+  background-color: var(--color-coral-vermillion);
+  color: #ffffff;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(255, 87, 52, 0.2);
+}
+
+.btn-pill-filled {
+  border: 2px solid var(--color-coral-vermillion);
+  background-color: var(--color-coral-vermillion);
+  color: #ffffff;
+  border-radius: 200px;
+  padding: 10px 28px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.btn-pill-filled:hover {
+  background-color: #ec4f22;
+  border-color: #ec4f22;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(236, 79, 34, 0.25);
+}
+
+/* Hover underline feedback */
+.nav-link-pill {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--color-ink-navy);
+  position: relative;
+  padding: 6px 12px;
+  border-radius: 200px;
+  transition: color 0.2s ease;
+}
+
+.nav-link-pill::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 12px;
+  right: 12px;
+  height: 2px;
+  background-color: var(--color-coral-vermillion);
+  transform: scaleX(0);
+  transition: transform 0.25s ease;
+}
+
+.nav-link-pill:hover::after,
+.nav-link-pill.active::after {
+  transform: scaleX(1);
+}
+
+/* White Quiz Card Spec: Pure white surface, no border, no shadow, flat contrast */
+.white-editorial-card {
+  background-color: #ffffff;
+  border: none;
+  box-shadow: none;
+  border-radius: 0px;
+  padding: 36px 28px;
+  transition: transform 0.3s ease, background-color 0.3s ease;
+}
+
+.white-editorial-card:hover {
+  transform: translateY(-3px);
+  background-color: #ffffff;
+}
+
+/* Floating animation for botanical elements */
+@keyframes floatSlight {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-8px) rotate(1deg); }
+}
+
+.animate-float-slight {
+  animation: floatSlight 7s ease-in-out infinite;
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 3s ease-in-out infinite;
+}
+
+/* Custom sleek scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #fef1ec;
+}
+::-webkit-scrollbar-thumb {
+  background: #f6bba4;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #ff5734;
+}
+
+/* Infinite Right-to-Left Floating Marquee behind recipient name */
+@keyframes marqueeLeft {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee-left {
+  display: flex;
+  width: max-content;
+  animation: marqueeLeft 35s linear infinite;
+}
+
+.animate-marquee-left:hover {
+  animation-play-state: paused;
+}
+
+/* Hide Next.js Dev Badge / Circle overlay */
+nextjs-portal,
+[data-nextjs-toast],
+#next-logo-badge,
+div[class*="nextjs-toast"] {
+  display: none !important;
+}
+
+
