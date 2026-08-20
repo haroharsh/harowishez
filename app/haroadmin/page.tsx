@@ -53,6 +53,7 @@ export default function HaroAdminPage() {
   const [birthdayDate, setBirthdayDate] = useState('2026-10-18');
   const [customHash, setCustomHash] = useState('');
   const [songUrl, setSongUrl] = useState('');
+  const [uploadingAudio, setUploadingAudio] = useState(false);
   const [customMessage, setCustomMessage] = useState('');
   
   // Dynamic Arrays for Wishes, Quotes, Pictures
@@ -562,41 +563,48 @@ export default function HaroAdminPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                 {/* File Upload Button */}
                 <div className="bg-white p-4 border border-[#f6bba4] rounded-sm">
-                  <label className="btn-pill-filled text-xs py-2.5 px-4 cursor-pointer flex items-center justify-center gap-2 !bg-[#1DB954] !border-[#1DB954] w-full text-center">
-                    <Music className="w-4 h-4" />
-                    <span>Choose MP3 File From Computer</span>
+                  <label className={`btn-pill-filled text-xs py-2.5 px-4 cursor-pointer flex items-center justify-center gap-2 !bg-[#1DB954] !border-[#1DB954] w-full text-center ${uploadingAudio ? 'opacity-70 cursor-not-allowed' : ''}`}>
+                    <Music className={`w-4 h-4 ${uploadingAudio ? 'animate-spin' : ''}`} />
+                    <span>{uploadingAudio ? 'Uploading Audio...' : 'Choose MP3 File From Computer'}</span>
                     <input
                       type="file"
                       accept="audio/mp3,audio/*"
+                      disabled={uploadingAudio}
                       className="hidden"
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (file) {
                           const sizeFormatted = (file.size >= 1024 * 1024)
                             ? `${(file.size / (1024 * 1024)).toFixed(2)} MB`
                             : `${(file.size / 1024).toFixed(1)} KB`;
 
-                          // Allow MP3 files up to 10MB (comfortably supporting 5MB+ audio files)
-                          if (file.size > 10 * 1024 * 1024) {
-                            alert(`⚠️ MP3 file is ${sizeFormatted}.\n\nPlease select an MP3 file under 10MB, or paste a direct MP3 URL / Google Drive link instead.`);
-                            return;
-                          }
+                          setUploadingAudio(true);
+                          const formData = new FormData();
+                          formData.append('file', file);
 
-                          const reader = new FileReader();
-                          reader.onload = (event) => {
-                            const result = event.target?.result as string;
-                            if (result) {
-                              setSongUrl(result);
-                              alert(`✅ Loaded "${file.name}" (${sizeFormatted}) successfully!`);
+                          try {
+                            const res = await fetch('/api/upload', {
+                              method: 'POST',
+                              body: formData,
+                            });
+                            const json = await res.json();
+                            if (json.success && json.url) {
+                              setSongUrl(json.url);
+                              alert(`✅ Uploaded "${file.name}" (${sizeFormatted}) successfully!`);
+                            } else {
+                              alert('Error uploading audio: ' + (json.error || 'Upload failed'));
                             }
-                          };
-                          reader.readAsDataURL(file);
+                          } catch (err: any) {
+                            alert('Failed to upload audio: ' + err.message);
+                          } finally {
+                            setUploadingAudio(false);
+                          }
                         }
                       }}
                     />
                   </label>
                   <p className="text-[11px] font-sans text-[#11223f]/60 mt-2 text-center">
-                    Encodes & saves MP3 file to MongoDB & local disk (Supports 5MB+ audio, max 10MB).
+                    Uploads raw audio directly (Supports 5MB, 10MB, 20MB+ MP3 files).
                   </p>
                 </div>
 
@@ -621,9 +629,9 @@ export default function HaroAdminPage() {
                 <div className="mt-4 pt-3 border-t border-[#1DB954]/30 flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3 border border-[#1DB954]">
                   <div className="flex items-center gap-2 text-xs font-sans font-medium text-[#1DB954]">
                     <Music className="w-4 h-4 animate-bounce" />
-                    <span>{songUrl.startsWith('data:') ? '✅ MP3 File Ready to Save' : '✅ MP3 URL Connected'}</span>
+                    <span>{songUrl.startsWith('/uploads/') ? '✅ Audio Uploaded & Connected' : songUrl.startsWith('data:') ? '✅ MP3 File Connected' : '✅ Audio URL Connected'}</span>
                   </div>
-                  <audio controls src={songUrl.startsWith('data:') ? songUrl : undefined} className="h-8 max-w-full" />
+                  <audio controls src={songUrl} className="h-8 max-w-full" />
                   <button
                     type="button"
                     onClick={() => setSongUrl('')}
